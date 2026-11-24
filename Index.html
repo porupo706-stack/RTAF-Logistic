@@ -4,9 +4,8 @@
     <base target="_top">
     <!--
       Index.html — ฝั่งหน้าเว็บของระบบจัดการคลังพัสดุ
-      วิธีหาจุดที่ต้องแก้เมื่อนำไปใช้หน่วยงานอื่น: ค้นหาข้อความ [CHANGE] (Ctrl+F)
-        [CHANGE]        = ต้องแก้ทุกหน่วยงาน
-        [CHANGE-ถ้า...] = แก้เฉพาะเมื่อหน่วยงานของคุณต่างจากต้นแบบ
+      ค่าที่ผูกกับหน่วยงาน (ชื่อหน่วย ชื่อสาย URL โลโก้ ยศผู้ตรวจ ฯลฯ) อยู่ที่บล็อก CONFIG ใน Code.gs ที่เดียว
+      Index.html รับค่ามาเป็นตัวแปร APP_CONFIG จึงไม่ต้องแก้ไฟล์นี้เมื่อย้ายหน่วยงาน
     -->
     <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
@@ -481,13 +480,11 @@
       <div class="header-content">
         <div class="header-icon"><i class=" "></i></div>
         <div class="header-text">
-          <!-- [CHANGE] ชื่อระบบ/ชื่อหน่วยงานที่หัวเว็บ (บรรทัด h2 นี้ และบรรทัดรองด้านล่างที่เขียนว่า Wing7) -->
-          <h2>ระบบจัดการคลังพัสดุ กองบิน ๗</h2>
-          <p>Logistics Management Information System | Wing7</p>
+          <h2>ระบบจัดการคลังพัสดุ <?= config.unitName ?></h2>
+          <p>Logistics Management Information System | <?= config.unitNameEn ?></p>
         </div>
         <div class="header-logo">
-          <!-- [CHANGE] โลโก้หน่วยงาน → ใส่ลิงก์รูปของคุณแทน (ต้องเข้าถึงได้ตลอด) -->
-          <img src="https://YOUR-DOMAIN/path/to/logo.png" alt="RTAF">
+          <img src="<?= config.logoUrl ?>" alt="RTAF">
         </div>
       </div>
     </div>
@@ -524,6 +521,7 @@
     </div>
 
     <script>
+      var APP_CONFIG = <?!= JSON.stringify(config) ?>;   // มาจาก CONFIG ใน Code.gs
       var currentItem  = null;
       var selectedUnit = "";
       const units = [
@@ -572,7 +570,7 @@
         currentItem  = data;
         selectedUnit = "";
         var mfgBoxHTML = '';
-        if (data.sheetName === 'สายขนส่ง') {  // [CHANGE-ถ้าชื่อสายต่าง] สายที่ใช้ช่องวันที่ผลิต/เลขทะเบียนรถ
+        if (data.sheetName === APP_CONFIG.transportSheet) {
           var mfgTxt;
           if (data.mfgDate) {
             var mp = data.mfgDate.split('-');
@@ -596,7 +594,7 @@
             </div>`;
         }
         var regNumBoxHTML = '';
-        if (data.sheetName === 'สายขนส่ง') {  // [CHANGE-ถ้าชื่อสายต่าง] สายที่ใช้ช่องวันที่ผลิต/เลขทะเบียนรถ
+        if (data.sheetName === APP_CONFIG.transportSheet) {
           var regTxt = data.regNum
             ? data.regNum
             : '<span style="color:#aaa;font-size:13px;font-weight:400;">แตะเพื่อเพิ่ม</span>';
@@ -817,10 +815,10 @@
         var msg = document.getElementById('msg');
         msg.style.color = "#1a73e8";
         msg.innerHTML   = "<i class='fas fa-spinner fa-spin'></i> กำลังบันทึกข้อมูล...";
-        var mfgDateToSave = (currentItem.sheetName === 'สายขนส่ง')  // [CHANGE-ถ้าชื่อสายต่าง] สายที่ใช้ช่องวันที่ผลิต/เลขทะเบียนรถ
+        var mfgDateToSave = (currentItem.sheetName === APP_CONFIG.transportSheet)
           ? (currentItem.mfgDate !== undefined ? currentItem.mfgDate : '')
           : null;
-        var regNumToSave = (currentItem.sheetName === 'สายขนส่ง')  // [CHANGE-ถ้าชื่อสายต่าง] สายที่ใช้ช่องวันที่ผลิต/เลขทะเบียนรถ
+        var regNumToSave = (currentItem.sheetName === APP_CONFIG.transportSheet)
           ? (currentItem.regNum !== undefined ? currentItem.regNum : '')
           : null;
         google.script.run.withSuccessHandler(function(res) {
@@ -1049,11 +1047,7 @@
                 <select id="newItemSheet" onchange="toggleMfgDate(this.value)"
                   style="width:100%;padding:12px;border:2px solid #e0e0e0;border-radius:12px;
                   font-family:'Kanit';font-size:16px;box-sizing:border-box;outline:none;background:white;">
-                  <!-- [CHANGE-ถ้าสายต่างจากต้นแบบ] ตัวเลือกสายงาน (4 บรรทัด option): value ต้องตรงกับชื่อชีท -->
-                  <option value="สายพลา">สายพลา</option>
-                  <option value="สายสื่อสาร">สายสื่อสาร</option>
-                  <option value="สายช่างโยธา">สายช่างโยธา</option>
-                  <option value="สายขนส่ง">สายขนส่ง</option>
+                  ${APP_CONFIG.sheets.map(function(n) { return '<option value="' + n + '">' + n + '</option>'; }).join('')}
                 </select>
               </div>
               <div>
@@ -1107,13 +1101,13 @@
       function toggleMfgDate(val) {
         var wrap = document.getElementById('mfgDateWrap');
         if (wrap) {
-          wrap.style.display = (val === 'สายขนส่ง') ? 'block' : 'none';  // [CHANGE-ถ้าชื่อสายต่าง] สายที่ใช้ช่องวันที่ผลิต/เลขทะเบียนรถ
+          wrap.style.display = (val === APP_CONFIG.transportSheet) ? 'block' : 'none';
           var mfgInput = document.getElementById('newItemMfgDate');
           if (mfgInput) mfgInput.value = '';
         }
         var regWrap = document.getElementById('regNumWrap');
         if (regWrap) {
-          regWrap.style.display = (val === 'สายขนส่ง') ? 'block' : 'none';  // [CHANGE-ถ้าชื่อสายต่าง] สายที่ใช้ช่องวันที่ผลิต/เลขทะเบียนรถ
+          regWrap.style.display = (val === APP_CONFIG.transportSheet) ? 'block' : 'none';
           var regInput = document.getElementById('newItemRegNum');
           if (regInput) regInput.value = '';
         }
@@ -1129,7 +1123,7 @@
         var msg      = document.getElementById('msg');
         var mfgDate = '';
         var regNum  = '';  
-        if (sheet === 'สายขนส่ง') {  // [CHANGE-ถ้าชื่อสายต่าง] สายที่ใช้ช่องวันที่ผลิต/เลขทะเบียนรถ
+        if (sheet === APP_CONFIG.transportSheet) {
           var mfgInput = document.getElementById('newItemMfgDate');
           if (mfgInput) mfgDate = mfgInput.value || '';
           var regInput = document.getElementById('newItemRegNum');
@@ -1274,12 +1268,8 @@
       function openTotalItems() {
         var tabs = `
           <div class="dd-tabs">
-            <!-- [CHANGE-ถ้าสายต่างจากต้นแบบ] แท็บสายงานหน้า "พัสดุทั้งหมด" (id ต้องเป็น tab-<ชื่อชีท>) -->
             <button class="dd-tab active" id="tab-all"         onclick="switchTotalTab('all')">ทั้งหมด</button>
-            <button class="dd-tab"        id="tab-สายพลา"      onclick="switchTotalTab('สายพลา')">สายพลา</button>
-            <button class="dd-tab"        id="tab-สายสื่อสาร"  onclick="switchTotalTab('สายสื่อสาร')">สายสื่อสาร</button>
-            <button class="dd-tab"        id="tab-สายช่างโยธา"  onclick="switchTotalTab('สายช่างโยธา')">สายช่างโยธา</button>
-            <button class="dd-tab"        id="tab-สายขนส่ง"    onclick="switchTotalTab('สายขนส่ง')">สายขนส่ง</button>
+            ${APP_CONFIG.sheets.map(function(n) { return '<button class="dd-tab" id="tab-' + n + '" onclick="switchTotalTab(\'' + n + '\')">' + n + '</button>'; }).join('')}
           </div>
           <input class="dd-search" id="ddTotalSearch" placeholder="🔍 ค้นหาชื่อหรือหมายเลข..." oninput="filterTotalList(this.value)">`;
         createDDOverlay('📦 รายการพัสดุทั้งหมด', tabs, '<div class="dd-empty"><i class="fas fa-spinner fa-spin"></i> กำลังโหลด...</div>');
@@ -1333,12 +1323,8 @@
       function openLowStock() {
         var tabs = `
           <div class="dd-tabs">
-            <!-- [CHANGE-ถ้าสายต่างจากต้นแบบ] แท็บสายงานหน้า "พัสดุใกล้หมด" (id ต้องเป็น ls-tab-<ชื่อชีท>) -->
             <button class="dd-tab active" id="ls-tab-all"         onclick="switchLSTab('all')">ทั้งหมด</button>
-            <button class="dd-tab"        id="ls-tab-สายพลา"      onclick="switchLSTab('สายพลา')">สายพลา</button>
-            <button class="dd-tab"        id="ls-tab-สายสื่อสาร"  onclick="switchLSTab('สายสื่อสาร')">สายสื่อสาร</button>
-            <button class="dd-tab"        id="ls-tab-สายช่างโยธา"      onclick="switchLSTab('สายช่างโยธา')">สายช่างโยธา</button>
-            <button class="dd-tab"        id="ls-tab-สายขนส่ง"    onclick="switchLSTab('สายขนส่ง')">สายขนส่ง</button>
+            ${APP_CONFIG.sheets.map(function(n) { return '<button class="dd-tab" id="ls-tab-' + n + '" onclick="switchLSTab(\'' + n + '\')">' + n + '</button>'; }).join('')}
             <button class="dd-tab"        id="ls-tab-zero"         onclick="switchLSTab('zero')">หมดแล้ว</button>
           </div>`;
         createDDOverlay('⚠️ รายการพัสดุใกล้หมด', tabs, '<div class="dd-empty"><i class="fas fa-spinner fa-spin"></i> กำลังโหลด...</div>');
@@ -1636,7 +1622,7 @@
         var firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
         var fmt = function(d) { return d.toISOString().split('T')[0]; };
         var fmtLocal = function(d) { return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); };
-        var fyStart = new Date(today.getMonth() >= 9 ? today.getFullYear() : today.getFullYear() - 1, 9, 1);  // [CHANGE-ถ้าต่าง] วันเริ่มต้นช่วงตรวจ (เดือน 9 = ต.ค. วันที่ 1) ถ้าหน่วยใช้รอบอื่นให้แก้
+        var fyStart = new Date(today.getMonth() >= APP_CONFIG.fyStartMonth - 1 ? today.getFullYear() : today.getFullYear() - 1, APP_CONFIG.fyStartMonth - 1, 1);
         _rptFmt = 'normal';
         var ov = document.createElement('div');
         ov.id = 'reportOverlay';
@@ -1663,12 +1649,8 @@
             '<div id="rptSheetWrap" style="display:none;padding:12px 20px 0;">' +
               '<div style="font-size:13px;font-weight:600;color:#5f6368;margin-bottom:8px;">เลือกสายงาน/คลัง</div>' +
               '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
-                // [CHANGE-ถ้าสายต่างจากต้นแบบ] ปุ่มเลือกสายในหน้ารายงาน (5 ปุ่ม: ทั้งหมด + 4 สาย) ชื่อต้องตรงกับชื่อชีท
                 '<button id="sheetBtn-all"          onclick="_selectSheet(\'all\')"          style="padding:8px 16px;border-radius:20px;border:1.5px solid #1a73e8;background:#1a73e8;color:white;font-family:Kanit;font-size:13px;cursor:pointer;">ทั้งหมด</button>' +
-                '<button id="sheetBtn-สายพลา"       onclick="_selectSheet(\'สายพลา\')"       style="padding:8px 16px;border-radius:20px;border:1.5px solid #e0e0e0;background:white;color:#5f6368;font-family:Kanit;font-size:13px;cursor:pointer;">สายพลา</button>' +
-                '<button id="sheetBtn-สายสื่อสาร"   onclick="_selectSheet(\'สายสื่อสาร\')"   style="padding:8px 16px;border-radius:20px;border:1.5px solid #e0e0e0;background:white;color:#5f6368;font-family:Kanit;font-size:13px;cursor:pointer;">สายสื่อสาร</button>' +
-                '<button id="sheetBtn-สายช่างโยธา"       onclick="_selectSheet(\'สายช่างโยธา\')"       style="padding:8px 16px;border-radius:20px;border:1.5px solid #e0e0e0;background:white;color:#5f6368;font-family:Kanit;font-size:13px;cursor:pointer;">สายช่างโยธา</button>' +
-                '<button id="sheetBtn-สายขนส่ง"     onclick="_selectSheet(\'สายขนส่ง\')"     style="padding:8px 16px;border-radius:20px;border:1.5px solid #e0e0e0;background:white;color:#5f6368;font-family:Kanit;font-size:13px;cursor:pointer;">สายขนส่ง</button>' +
+                APP_CONFIG.sheets.map(function(n) { return '<button id="sheetBtn-' + n + '" onclick="_selectSheet(\'' + n + '\')" style="padding:8px 16px;border-radius:20px;border:1.5px solid #e0e0e0;background:white;color:#5f6368;font-family:Kanit;font-size:13px;cursor:pointer;">' + n + '</button>'; }).join('') +
               '</div>' +
             '</div>' +
             '<div id="rptAnnexDateWrap" style="display:none;padding:12px 20px 0;">' +
@@ -1711,12 +1693,11 @@
 
       var _rptType = ''; var _rptSheet = 'all'; var _rptFmt = 'normal';
       var _qrAllItems = []; var _qrSelected = {};
-      // [CHANGE] วาง Web app URL (ลงท้าย /exec) ที่ได้จากการ Deploy ของคุณแทน YOUR_DEPLOYMENT_ID (ต้องเหมือนใน Code.gs)
-      var QR_SCRIPT_URL = "https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec"; 
+      var QR_SCRIPT_URL = APP_CONFIG.webAppUrl;
 
       function _selectSheet(sheet) {
         _rptSheet = sheet;
-        ['all','สายพลา','สายสื่อสาร','สายช่างโยธา','สายขนส่ง'].forEach(function(s) {  // [CHANGE-ถ้าสายต่างจากต้นแบบ] รายชื่อสาย ต้องตรงกับปุ่มเลือกสายด้านบน
+        ['all'].concat(APP_CONFIG.sheets).forEach(function(s) {
           var btn = document.getElementById('sheetBtn-' + s);
           if (!btn) return;
           btn.style.background  = s === sheet ? '#1a73e8' : 'white';
@@ -1738,7 +1719,7 @@
           el.style.background = t === type ? '#e8f0fe' : 'transparent';
           el.style.borderLeft = t === type ? '3px solid #1a73e8' : '3px solid transparent';
         });
-        ['all','สายพลา','สายสื่อสาร','สายช่างโยธา','สายขนส่ง'].forEach(function(s) {  // [CHANGE-ถ้าสายต่างจากต้นแบบ] รายชื่อสาย ต้องตรงกับปุ่มเลือกสายด้านบน
+        ['all'].concat(APP_CONFIG.sheets).forEach(function(s) {
           var btn = document.getElementById('sheetBtn-' + s);
           if (!btn) return;
           btn.style.background  = s === 'all' ? '#1a73e8' : 'white';
@@ -1888,8 +1869,7 @@
         div.className = 'print-only';
         div.innerHTML =
         '<div class="p-header">' +
-        // [CHANGE] ชื่อหน่วยงานที่หัวรายงานที่พิมพ์
-        '<h1>กองบิน ๗</h1>' +
+        '<h1>' + APP_CONFIG.unitName + '</h1>' +
         '<h2>ป้าย QR Code พัสดุ</h2>' +
         '<p>จำนวน ' + items.length + ' ป้าย</p>' +
         '</div>' +
@@ -2076,15 +2056,13 @@
         div.className = 'print-only';
         div.innerHTML =
         '<div class="p-header">' +
-        // [CHANGE] ชื่อหน่วยงานที่หัวรายงานที่พิมพ์
-        '<h1>กองบิน ๗</h1>' +
+        '<h1>' + APP_CONFIG.unitName + '</h1>' +
         '<h2>' + (titleMap[type] || 'รายงาน') + '</h2>' +
         '<p>' + (subtitleMap[type] || '') + '</p>' +
         '<p>' + countLabel + ' | พิมพ์เมื่อ: ' + dateStr + ' เวลา ' + timeStr + ' น.</p>' +
         '</div>' +
         tableHTML +
-        // [CHANGE] ชื่อระบบ/หน่วยงานที่ท้ายรายงานที่พิมพ์
-        '<div class="p-footer">ระบบจัดการคลังพัสดุ กองบิน ๗ | พิมพ์เมื่อ ' + dateStr + ' ' + timeStr + ' น.</div>';
+        '<div class=\"p-footer\">ระบบจัดการคลังพัสดุ ' + APP_CONFIG.unitName + ' | พิมพ์เมื่อ ' + dateStr + ' ' + timeStr + ' น.</div>';
         document.body.appendChild(div);
         var ov = document.getElementById('reportOverlay');
         if (ov) ov.remove();
@@ -2097,22 +2075,10 @@
       // ============================================================
       //  บัญชีตรวจสอบพัสดุ (ผนวก ค) — พิมพ์ / บันทึกเป็น Excel
       // ============================================================
-      // [CHANGE-ถ้าสายต่างจากต้นแบบ] รายการสายในไฟล์ Excel ผนวก ค: key = ชื่อชีทในระบบ, sheet = ชื่อชีทใน Excel, title = ชื่อเต็มในหัวกระดาษ
-      // (สายที่ไม่มี key ตรงกับชีทในระบบ จะขึ้น "ไม่มี" ถ้าเพิ่มสายใหม่ ต้องเพิ่มชื่อชีทใน getAnnexItems() ของ Code.gs ด้วย)
-      var ANNEX_LINES = [
-        { key: 'สายสื่อสาร',    sheet: 'คงคลัง สายสื่อสาร',    title: 'สายสื่อสารอิเล็กทรอนิกส์และการภาพ' },
-        { key: 'สายพลา',        sheet: 'คงคลัง สายพลาธิการ',   title: 'สายพลาธิการ' },
-        { key: 'สายช่างอากาศ',  sheet: 'คงคลัง สายช่างอากาศ',  title: 'สายช่างอากาศ' },
-        { key: 'สายสรรพาวุธ',   sheet: 'คงคลัง สายสรรพาวุธ',   title: 'สายสรรพาวุธ' },
-        { key: 'สายขนส่ง',      sheet: 'คงคลัง สายขนส่ง',      title: 'สายขนส่ง' },
-        { key: 'สายช่างโยธา',   sheet: 'คงคลัง สายช่างโยธา',   title: 'สายช่างโยธา' },
-        { key: 'สายเชื้อเพลิง', sheet: 'คงคลัง สายเชื้อเพลิง', title: 'สายเชื้อเพลิง' },
-        { key: 'สายแพทย์',      sheet: 'คงคลัง สายแพทย์',      title: 'สายแพทย์' }
-      ];
+      var ANNEX_LINES = APP_CONFIG.annexLines;   // มาจาก CONFIG.ANNEX_LINES ใน Code.gs
       var ANNEX_COLS = ['ลำดับ','หมายเลขพัสดุ','ชื่อพัสดุ','หน่วยนับ','จำนวนตามบัญชี','จำนวนนับได้','ขาด','เกิน','หมายเหตุ'];
-      // [CHANGE] ยศ/ตำแหน่งผู้ตรวจพัสดุ ที่แสดงท้ายกระดาษทุกหน้า (ANNEX_SIGN1 และ ANNEX_SIGN2)
-      var ANNEX_SIGN1 = 'เจ้าหน้าที่ตรวจสอบพัสดุ    น.ต. .........................................';
-      var ANNEX_SIGN2 = '                                พ.อ.อ. .....................................';
+      var ANNEX_SIGN1 = APP_CONFIG.annexSign[0];   // มาจาก CONFIG.ANNEX_SIGN
+      var ANNEX_SIGN2 = APP_CONFIG.annexSign[1];
 
       function _annexLinesFor(sheet) {
         return sheet === 'all' ? ANNEX_LINES : ANNEX_LINES.filter(function(l) { return l.key === sheet; });
@@ -2126,9 +2092,9 @@
       }
       function _annexHeaderLines(line, from, to) {
         return [
-          'ผนวก  ค',  // [CHANGE-ถ้าแบบฟอร์มต่าง] ข้อความหัวฟอร์ม (บรรทัดถัดไปคือชื่อบัญชี "ในรอบ 1 ปี")
+          'ผนวก  ค',  // [CHANGE-ถ้าแบบฟอร์มต่าง] ข้อความหัวฟอร์ม (บรรทัดถัดไปคือชื่อบัญชี \"ในรอบ 1 ปี\")
           'บัญชีตรวจสอบพัสดุประเภทในคลังทุกประเภทในรอบ 1 ปี  ' + line.title,
-          'หน่วย คลังกลาง',  // [CHANGE] ชื่อหน่วย/คลังในหัวกระดาษ ผนวก ค
+          'หน่วย ' + APP_CONFIG.annexUnitLabel,
           'วันที่ทำการตรวจสอบพัสดุ ตั้งแต่ ' + _annexShortDate(from) + ' ถึง ' + _annexShortDate(to)
         ];
       }
@@ -2229,7 +2195,7 @@
         if (typeof ExcelJS === 'undefined') { showError('โหลดตัวสร้างไฟล์ Excel ไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่'); return; }
         var lines = _annexLinesFor(sheet);
         var wb = new ExcelJS.Workbook();
-        wb.creator = 'ระบบจัดการคลังพัสดุ กองบิน ๗';  // [CHANGE-ตามต้องการ] ชื่อผู้สร้างไฟล์ Excel
+        wb.creator = 'ระบบจัดการคลังพัสดุ ' + APP_CONFIG.unitName;
         wb.created = new Date();
         var thin = { style: 'thin', color: { argb: 'FF000000' } };
         var box  = { top: thin, left: thin, bottom: thin, right: thin };

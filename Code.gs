@@ -1,14 +1,83 @@
 // =============================================================================
 //  ระบบจัดการคลังพัสดุ (Google Apps Script) — Code.gs  (ไฟล์ฝั่งเซิร์ฟเวอร์)
 //
-//  วิธีหาจุดที่ต้องแก้เมื่อนำไปใช้หน่วยงานอื่น:
-//    ค้นหาข้อความ  [CHANGE]  ในไฟล์นี้ (Ctrl+F) จะเจอทุกจุดที่ต้องตรวจ/แก้
+//  >>> เมื่อนำไปใช้หน่วยงานอื่น แก้ที่บล็อก CONFIG ด้านล่างนี้ที่เดียว <<<
+//  ทั้ง Code.gs และ Index.html อ่านค่าจาก CONFIG นี้ (Index.html รับค่าผ่านฟังก์ชัน getClientConfig_)
+//
+//  ค้นหา [CHANGE] เพื่อดูทุกจุดที่ต้องตรวจ
 //    [CHANGE]        = ต้องแก้ทุกหน่วยงาน
 //    [CHANGE-ถ้า...] = แก้เฉพาะเมื่อหน่วยงานของคุณต่างจากต้นแบบ
 //
-//  ชีทที่ระบบต้องมี: สายพลา, สายสื่อสาร, สายช่างโยธา, สายขนส่ง, ประวัติรับจ่าย, สรุปรายวัน
-//  (ดูรายละเอียดโครงคอลัมน์ใน README.md)
+//  ชีทที่ระบบต้องมี: ชีทสายงานตาม INVENTORY_SHEETS + ชีทประวัติ + ชีทสรุปรายวัน
+//  (ดูโครงคอลัมน์ใน README.md)
 // =============================================================================
+var CONFIG = {
+  // [CHANGE] ชื่อหน่วยงาน (ใช้ที่เมนู ชื่อแท็บ หัวเว็บ หัวรายงานที่พิมพ์ และไฟล์ Excel)
+  UNIT_NAME: 'กองบิน ๗',
+  // [CHANGE] ชื่อหน่วยงานภาษาอังกฤษ (บรรทัดรองใต้ชื่อระบบที่หัวเว็บ)
+  UNIT_NAME_EN: 'Wing7',
+
+  // [CHANGE] Web app URL (ลงท้าย /exec) ที่ได้จากการ Deploy ของคุณ แทน YOUR_DEPLOYMENT_ID
+  //          ใช้สร้าง QR Code และปุ่มเปิดระบบเต็มหน้าจอ
+  WEB_APP_URL: 'https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec',
+
+  // [CHANGE] ลิงก์รูปโลโก้หน่วยงาน (ต้องเข้าถึงได้ตลอด)
+  LOGO_URL: 'https://YOUR-DOMAIN/path/to/logo.png',
+
+  // [CHANGE-ถ้าสายต่างจากต้นแบบ] ชื่อชีทสายงาน (ต้องตรงกับชื่อชีทใน Google Sheet ทุกตัวอักษร)
+  //   เพิ่ม/ลด/เปลี่ยนชื่อสายที่นี่ที่เดียว หน้าเว็บ รายงาน และการค้นหาจะตามอัตโนมัติ
+  INVENTORY_SHEETS: ['สายพลา', 'สายสื่อสาร', 'สายช่างโยธา', 'สายขนส่ง'],
+
+  // [CHANGE-ถ้าชื่อสายต่าง] ชีทที่มีช่อง "วันที่ผลิต" และ "เลขทะเบียนรถ" (ไม่มี ให้ใส่ '')
+  TRANSPORT_SHEET: 'สายขนส่ง',
+
+  // [CHANGE-ถ้าชื่อชีทต่าง] ชีทระบบ
+  HISTORY_SHEET: 'ประวัติรับจ่าย',
+  SUMMARY_SHEET: 'สรุปรายวัน',
+
+  // [CHANGE-ตามต้องการ] เกณฑ์ "พัสดุใกล้หมด" (จำนวนที่น้อยกว่าหรือเท่ากับค่านี้)
+  LOW_STOCK_THRESHOLD: 5,
+
+  // ---------- รายงาน "บัญชีตรวจสอบพัสดุ (ผนวก ค)" / Excel ----------
+  // [CHANGE] ชื่อหน่วย/คลังในหัวกระดาษ (แสดงเป็น "หน่วย <ค่านี้>")
+  ANNEX_UNIT_LABEL: 'คลังกลาง',
+  // [CHANGE] ยศ/ตำแหน่งผู้ตรวจพัสดุ แสดงท้ายกระดาษทุกหน้า (2 บรรทัด)
+  ANNEX_SIGN: [
+    'เจ้าหน้าที่ตรวจสอบพัสดุ    น.ต. .........................................',
+    '                                พ.อ.อ. .....................................'
+  ],
+  // [CHANGE-ถ้าต่าง] เดือนที่เริ่มรอบตรวจ (10 = 1 ต.ค.) ใช้เป็นวันเริ่มต้นในหน้าจอ
+  ANNEX_FISCAL_START_MONTH: 10,
+  // [CHANGE-ถ้าสายต่างจากต้นแบบ] รายการสายในไฟล์ Excel (1 ชีทต่อ 1 สาย)
+  //   key   = ชื่อชีทในระบบ (ต้องตรงกับ INVENTORY_SHEETS; สายที่ไม่มี key ตรงกันจะขึ้น "ไม่มี")
+  //   sheet = ชื่อชีทใน Excel, title = ชื่อเต็มที่แสดงในหัวกระดาษ
+  ANNEX_LINES: [
+    { key: 'สายสื่อสาร',    sheet: 'คงคลัง สายสื่อสาร',    title: 'สายสื่อสารอิเล็กทรอนิกส์และการภาพ' },
+    { key: 'สายพลา',        sheet: 'คงคลัง สายพลาธิการ',   title: 'สายพลาธิการ' },
+    { key: 'สายช่างอากาศ',  sheet: 'คงคลัง สายช่างอากาศ',  title: 'สายช่างอากาศ' },
+    { key: 'สายสรรพาวุธ',   sheet: 'คงคลัง สายสรรพาวุธ',   title: 'สายสรรพาวุธ' },
+    { key: 'สายขนส่ง',      sheet: 'คงคลัง สายขนส่ง',      title: 'สายขนส่ง' },
+    { key: 'สายช่างโยธา',   sheet: 'คงคลัง สายช่างโยธา',   title: 'สายช่างโยธา' },
+    { key: 'สายเชื้อเพลิง', sheet: 'คงคลัง สายเชื้อเพลิง', title: 'สายเชื้อเพลิง' },
+    { key: 'สายแพทย์',      sheet: 'คงคลัง สายแพทย์',      title: 'สายแพทย์' }
+  ]
+};
+
+// ค่าที่ส่งให้ Index.html (หน้าเว็บ)
+function getClientConfig_() {
+  return {
+    unitName:       CONFIG.UNIT_NAME,
+    unitNameEn:     CONFIG.UNIT_NAME_EN,
+    webAppUrl:      CONFIG.WEB_APP_URL,
+    logoUrl:        CONFIG.LOGO_URL,
+    sheets:         CONFIG.INVENTORY_SHEETS,
+    transportSheet: CONFIG.TRANSPORT_SHEET,
+    annexUnitLabel: CONFIG.ANNEX_UNIT_LABEL,
+    annexSign:      CONFIG.ANNEX_SIGN,
+    fyStartMonth:   CONFIG.ANNEX_FISCAL_START_MONTH,
+    annexLines:     CONFIG.ANNEX_LINES
+  };
+}
 
 // ------------------------------------------------------------
 //  หาตำแหน่งคอลัมน์จากหัวตาราง (รองรับทั้งชีทที่มี/ไม่มีคอลัมน์ "หน่วยนับ")
@@ -50,7 +119,7 @@ function sheetCols_(sheet) {
 
 function onOpen() {
   SpreadsheetApp.getUi()
-    .createMenu('คลังพัสดุ กองบิน ๗')  // [CHANGE] ชื่อเมนูในสเปรดชีต → ใส่ชื่อหน่วยงานของคุณ
+    .createMenu('คลังพัสดุ ' + CONFIG.UNIT_NAME)
     .addItem('เปิดระบบจัดการ (เต็มหน้าจอ)', 'openFullScreen') 
     .addItem('เปิดในหน้าต่าง', 'openDialog')
     .addToUi();
@@ -59,14 +128,15 @@ function onOpen() {
 function openDialog() {
   var template = HtmlService.createTemplateFromFile('Index');
   template.itemId = "";
+  template.config = getClientConfig_();
   var html = template.evaluate()
     .setWidth(1200)
     .setHeight(900);
-  SpreadsheetApp.getUi().showModalDialog(html, 'ระบบจัดการคลังพัสดุ กองบิน ๗');  // [CHANGE] ชื่อหัวหน้าต่าง → ใส่ชื่อหน่วยงานของคุณ
+  SpreadsheetApp.getUi().showModalDialog(html, 'ระบบจัดการคลังพัสดุ ' + CONFIG.UNIT_NAME);
 }
 
 function openFullScreen() {
-  var url = 'https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec';  // [CHANGE] วาง Web app URL (ลงท้าย /exec) ที่ได้จากการ Deploy ของคุณแทน YOUR_DEPLOYMENT_ID
+  var url = CONFIG.WEB_APP_URL;
   var html = HtmlService.createHtmlOutput(
     '<style>body{font-family:sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;height:90vh;gap:16px;background:#f8f9fa;}</style>' +
     '<p style="color:#5f6368;font-size:16px;">กำลังเปิดระบบในแท็บใหม่...</p>' +
@@ -81,8 +151,9 @@ function doGet(e) {
   var template = HtmlService.createTemplateFromFile('Index');
   var rawId = (e.parameter && e.parameter.id) ? e.parameter.id : "";
   template.itemId = rawId.toString().trim().replace(/\s/g, "");
+  template.config = getClientConfig_();
   return template.evaluate()
-    .setTitle('ระบบจัดการคลังพัสดุ กองบิน ๗')  // [CHANGE] ชื่อแท็บเบราว์เซอร์ → ใส่ชื่อหน่วยงานของคุณ
+    .setTitle('ระบบจัดการคลังพัสดุ ' + CONFIG.UNIT_NAME)
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
@@ -92,7 +163,7 @@ function getItemData(itemId) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var searchId = itemId.toString().trim().replace(/^'+|'+$/g, "");
   var cleanSearch = searchId.replace(/[\s\-]/g, "").toLowerCase();
-  var sheetNames = ["สายพลา", "สายสื่อสาร", "สายช่างโยธา", "สายขนส่ง"];  // [CHANGE-ถ้าสายต่างจากต้นแบบ] ชื่อชีทสายงาน ต้องตรงกับชื่อชีท และตรงกับทุกจุดที่มีรายการนี้
+  var sheetNames = CONFIG.INVENTORY_SHEETS;
   for (var s = 0; s < sheetNames.length; s++) {
     var sheet = ss.getSheetByName(sheetNames[s]);
     if (!sheet) continue;
@@ -138,11 +209,7 @@ function searchParcelByName(query) {
   for (var s = 0; s < allSheets.length; s++) {
     var sheet = allSheets[s];
     var sheetName = sheet.getName().trim();
-    // [CHANGE-ถ้าสายต่างจากต้นแบบ] รายชื่อสายที่ให้ค้นหา (4 บรรทัดถัดไป) ต้องตรงกับชื่อชีทสายงาน
-    var isTargetSheet = (sheetName.indexOf("สายพลา") !== -1 || 
-                         sheetName.indexOf("สายสื่อสาร") !== -1 || 
-                         sheetName.indexOf("สายช่างโยธา") !== -1 ||
-                         sheetName.indexOf("สายขนส่ง") !== -1);               
+    var isTargetSheet = CONFIG.INVENTORY_SHEETS.some(function(n) { return sheetName.indexOf(n) !== -1; });
     if (!isTargetSheet) continue;
     var data = sheet.getDataRange().getValues();
     var C = detectCols_(data);
@@ -182,7 +249,7 @@ function updateQty(sheetName, row, newQty, itemName, unitName, newLocation, newM
   if (newLocation) {
     sheet.getRange(row, C.loc + 1).setValue(newLocation); 
   }
-  if (newManufDate && sheetName === 'สายขนส่ง') {  // [CHANGE-ถ้าชื่อสายต่าง] สายที่ใช้ช่องวันที่ผลิต/เลขทะเบียนรถ
+  if (newManufDate && sheetName === CONFIG.TRANSPORT_SHEET) {
     var mdParts = newManufDate.split('-');
     if (mdParts.length === 3) {
       var mdDate = new Date(parseInt(mdParts[0]), parseInt(mdParts[1]) - 1, parseInt(mdParts[2]));
@@ -191,7 +258,7 @@ function updateQty(sheetName, row, newQty, itemName, unitName, newLocation, newM
     }
   }
   var regNumChanged = false;
-  if (sheetName === 'สายขนส่ง' && newRegNum !== null && newRegNum !== undefined) {  // [CHANGE-ถ้าชื่อสายต่าง] สายที่ใช้ช่องวันที่ผลิต/เลขทะเบียนรถ
+  if (sheetName === CONFIG.TRANSPORT_SHEET && newRegNum !== null && newRegNum !== undefined) {
     var oldRegNum = sheet.getRange(row, C.reg + 1).getValue();
     oldRegNum = oldRegNum ? oldRegNum.toString().trim() : '';
     var newRegStr = newRegNum ? newRegNum.toString().trim() : '';
@@ -201,7 +268,7 @@ function updateQty(sheetName, row, newQty, itemName, unitName, newLocation, newM
     }
   }
   if (diff === 0 && !newLocation && !newManufDate && !regNumChanged) return oldQty;
-  var histSheet = ss.getSheetByName("ประวัติรับจ่าย");
+  var histSheet = ss.getSheetByName(CONFIG.HISTORY_SHEET);
   if (histSheet) {
     var histData = histSheet.getDataRange().getValues();
     var nextSeq = 1;
@@ -246,8 +313,8 @@ function updateQty(sheetName, row, newQty, itemName, unitName, newLocation, newM
 
 function generateDailySummary() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var historySheet = ss.getSheetByName("ประวัติรับจ่าย");
-  var summarySheet = ss.getSheetByName("สรุปรายวัน");
+  var historySheet = ss.getSheetByName(CONFIG.HISTORY_SHEET);
+  var summarySheet = ss.getSheetByName(CONFIG.SUMMARY_SHEET);
   if (!historySheet || !summarySheet) return "Error: ไม่พบชีท";
   var today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -280,7 +347,7 @@ function generateDailySummary() {
   }
   if (foundData) {
     var actualQty = {};
-    var invSheets = ["สายพลา", "สายสื่อสาร", "สายช่างโยธา", "สายขนส่ง"];  // [CHANGE-ถ้าสายต่างจากต้นแบบ] ชื่อชีทสายงาน ต้องตรงกับชื่อชีท และตรงกับทุกจุดที่มีรายการนี้
+    var invSheets = CONFIG.INVENTORY_SHEETS;
     for (var s = 0; s < invSheets.length; s++) {
       var invSheet = ss.getSheetByName(invSheets[s]);
       if (!invSheet) continue;
@@ -361,14 +428,14 @@ function addNewItem(sheetName, id, name, location, qty, manufactureDate, regNum,
   if (C.unit >= 0) sheet.getRange(newRow, C.unit + 1).setValue(unit ? unit.toString().trim() : "");
   sheet.getRange(newRow, C.loc + 1).setValue(location);
   sheet.getRange(newRow, C.qty + 1).setValue(qty);
-  var scriptUrl = "https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec";  // [CHANGE] วาง Web app URL (ลงท้าย /exec) ที่ได้จากการ Deploy ของคุณแทน YOUR_DEPLOYMENT_ID
+  var scriptUrl = CONFIG.WEB_APP_URL;
   sheet.getRange(newRow, C.qr + 1).setFormula(
     '=IMAGE("https://quickchart.io/qr?text=" & ENCODEURL("' + scriptUrl + '?id=" & B' + newRow + ') & "&size=1000")'
   );
   sheet.setRowHeight(newRow, 140);
   var borderRange = sheet.getRange(newRow, 1, 1, C.qr + 1);
   borderRange.setBorder(true, true, true, true, true, true, "#000000", SpreadsheetApp.BorderStyle.SOLID);
-  if (sheetName === 'สายขนส่ง' && manufactureDate) {  // [CHANGE-ถ้าชื่อสายต่าง] สายที่ใช้ช่องวันที่ผลิต/เลขทะเบียนรถ
+  if (sheetName === CONFIG.TRANSPORT_SHEET && manufactureDate) {
     var mdParts = manufactureDate.split('-');
     if (mdParts.length === 3) {
       var mdDate = new Date(parseInt(mdParts[0]), parseInt(mdParts[1]) - 1, parseInt(mdParts[2]));
@@ -376,10 +443,10 @@ function addNewItem(sheetName, id, name, location, qty, manufactureDate, regNum,
       sheet.getRange(newRow, C.mfg + 1).setNumberFormat('dd/MM/yyyy');
     }
   }
-  if (sheetName === 'สายขนส่ง' && regNum) {  // [CHANGE-ถ้าชื่อสายต่าง] สายที่ใช้ช่องวันที่ผลิต/เลขทะเบียนรถ
+  if (sheetName === CONFIG.TRANSPORT_SHEET && regNum) {
     sheet.getRange(newRow, C.reg + 1).setValue(regNum.toString().trim());
   }
-  var histSheet = ss.getSheetByName("ประวัติรับจ่าย");
+  var histSheet = ss.getSheetByName(CONFIG.HISTORY_SHEET);
   if (histSheet) {
     var lastHistRow = histSheet.getLastRow();
     var nextHistSeq = 1;
@@ -402,8 +469,8 @@ function addNewItem(sheetName, id, name, location, qty, manufactureDate, regNum,
 
 function getDashboardData() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheetNames = ["สายพลา", "สายสื่อสาร", "สายช่างโยธา","สายขนส่ง"];  // [CHANGE-ถ้าสายต่างจากต้นแบบ] ชื่อชีทสายงาน ต้องตรงกับชื่อชีท และตรงกับทุกจุดที่มีรายการนี้
-  var LOW_STOCK_THRESHOLD = 5;  // [CHANGE-ตามต้องการ] เกณฑ์ "พัสดุใกล้หมด" (จำนวนที่น้อยกว่าหรือเท่ากับค่านี้)
+  var sheetNames = CONFIG.INVENTORY_SHEETS;
+  var LOW_STOCK_THRESHOLD = CONFIG.LOW_STOCK_THRESHOLD;
   var totalItems = 0;
   var lowStockItems = [];
   for (var s = 0; s < sheetNames.length; s++) {
@@ -429,7 +496,7 @@ function getDashboardData() {
   }
   var todayReceiveItems = {};  
   var todayIssueItems  = {};
-  var histSheet = ss.getSheetByName("ประวัติรับจ่าย");
+  var histSheet = ss.getSheetByName(CONFIG.HISTORY_SHEET);
   if (histSheet) {
     var today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -460,7 +527,7 @@ function getDashboardData() {
 function getTotalItemsList(sheetName) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var results = [];
-  var sheetNames = sheetName ? [sheetName] : ["สายพลา", "สายสื่อสาร", "สายช่างโยธา","สายขนส่ง"];  // [CHANGE-ถ้าสายต่างจากต้นแบบ] ชื่อชีทสายงาน ต้องตรงกับชื่อชีท และตรงกับทุกจุดที่มีรายการนี้
+  var sheetNames = sheetName ? [sheetName] : CONFIG.INVENTORY_SHEETS;
   for (var s = 0; s < sheetNames.length; s++) {
     var sheet = ss.getSheetByName(sheetNames[s]);
     if (!sheet) continue;
@@ -485,7 +552,7 @@ function getTotalItemsList(sheetName) {
 
 function getHistoryByDate(dateStr, type) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var histSheet = ss.getSheetByName("ประวัติรับจ่าย");
+  var histSheet = ss.getSheetByName(CONFIG.HISTORY_SHEET);
   if (!histSheet) return [];
   var data = histSheet.getDataRange().getValues();
   var results = [];
@@ -493,7 +560,7 @@ function getHistoryByDate(dateStr, type) {
   targetDate.setHours(0, 0, 0, 0);
   var nameToId  = {};
   var nameToQty = {};
-  var invSheets = ["สายพลา", "สายสื่อสาร", "สายช่างโยธา","สายขนส่ง"];  // [CHANGE-ถ้าสายต่างจากต้นแบบ] ชื่อชีทสายงาน ต้องตรงกับชื่อชีท และตรงกับทุกจุดที่มีรายการนี้
+  var invSheets = CONFIG.INVENTORY_SHEETS;
   for (var s = 0; s < invSheets.length; s++) {
     var invSheet = ss.getSheetByName(invSheets[s]);
     if (!invSheet) continue;
@@ -539,7 +606,7 @@ function getHistoryByDate(dateStr, type) {
 
 function getMonthActivity(year, month, type) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var histSheet = ss.getSheetByName("ประวัติรับจ่าย");
+  var histSheet = ss.getSheetByName(CONFIG.HISTORY_SHEET);
   if (!histSheet) return [];
   var data = histSheet.getDataRange().getValues();
   var activeDays = {};
@@ -560,9 +627,9 @@ function getMonthActivity(year, month, type) {
 
 function fixHistoryBalance() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var histSheet = ss.getSheetByName("ประวัติรับจ่าย");
+  var histSheet = ss.getSheetByName(CONFIG.HISTORY_SHEET);
   if (!histSheet) return "ไม่พบชีทประวัติรับจ่าย";
-  var invSheets = ["สายพลา", "สายสื่อสาร", "สายช่างโยธา","สายขนส่ง"];  // [CHANGE-ถ้าสายต่างจากต้นแบบ] ชื่อชีทสายงาน ต้องตรงกับชื่อชีท และตรงกับทุกจุดที่มีรายการนี้
+  var invSheets = CONFIG.INVENTORY_SHEETS;
   var currentQty = {}; 
   for (var s = 0; s < invSheets.length; s++) {
     var invSheet = ss.getSheetByName(invSheets[s]);
@@ -599,7 +666,7 @@ function fixHistoryBalance() {
 
 function resequenceHistory() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var histSheet = ss.getSheetByName("ประวัติรับจ่าย");
+  var histSheet = ss.getSheetByName(CONFIG.HISTORY_SHEET);
   if (!histSheet) { Logger.log("ไม่พบชีท"); return; }
   var lastRow = histSheet.getLastRow();
   var seq = 1;
@@ -619,10 +686,10 @@ function resequenceHistory() {
 
 function fixAllHistoryBalance() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var histSheet = ss.getSheetByName("ประวัติรับจ่าย");
+  var histSheet = ss.getSheetByName(CONFIG.HISTORY_SHEET);
   if (!histSheet) return "ไม่พบชีท";
   var currentQty = {};
-  var invSheets = ["สายพลา", "สายสื่อสาร", "สายช่างโยธา","สายขนส่ง"];  // [CHANGE-ถ้าสายต่างจากต้นแบบ] ชื่อชีทสายงาน ต้องตรงกับชื่อชีท และตรงกับทุกจุดที่มีรายการนี้
+  var invSheets = CONFIG.INVENTORY_SHEETS;
   for (var s = 0; s < invSheets.length; s++) {
     var invSheet = ss.getSheetByName(invSheets[s]);
     if (!invSheet) continue;
@@ -671,7 +738,7 @@ function installOnEditTrigger() {
 function onEditInstallable(e) {
   if (!e) return;
   var sheet = e.range.getSheet();
-  if (sheet.getName() !== "ประวัติรับจ่าย") return;
+  if (sheet.getName() !== CONFIG.HISTORY_SHEET) return;
   var lock = LockService.getScriptLock();
   try {
     if (!lock.tryLock(3000)) return; 
@@ -683,10 +750,10 @@ function onEditInstallable(e) {
 
 function getDailySummaryByRange(dateFromStr, dateToStr) {
   var ss        = SpreadsheetApp.getActiveSpreadsheet();
-  var histSheet = ss.getSheetByName("ประวัติรับจ่าย");
+  var histSheet = ss.getSheetByName(CONFIG.HISTORY_SHEET);
   if (!histSheet) return [];
   var actualQty = {};
-  var invSheets = ["สายพลา", "สายสื่อสาร", "สายช่างโยธา","สายขนส่ง"];  // [CHANGE-ถ้าสายต่างจากต้นแบบ] ชื่อชีทสายงาน ต้องตรงกับชื่อชีท และตรงกับทุกจุดที่มีรายการนี้
+  var invSheets = CONFIG.INVENTORY_SHEETS;
   for (var s = 0; s < invSheets.length; s++) {
     var invSheet = ss.getSheetByName(invSheets[s]);
     if (!invSheet) continue;
@@ -748,13 +815,13 @@ function getDailySummaryByRange(dateFromStr, dateToStr) {
 
 function getHistoryByRange(dateFromStr, dateToStr) {
   var ss        = SpreadsheetApp.getActiveSpreadsheet();
-  var histSheet = ss.getSheetByName("ประวัติรับจ่าย");
+  var histSheet = ss.getSheetByName(CONFIG.HISTORY_SHEET);
   if (!histSheet) return [];
   var data = histSheet.getDataRange().getValues();
   var from = new Date(dateFromStr); from.setHours(0, 0, 0, 0);
   var to   = new Date(dateToStr);   to.setHours(23, 59, 59, 999);
   var actualQty = {};
-  var invSheets = ["สายพลา", "สายสื่อสาร", "สายช่างโยธา","สายขนส่ง"];  // [CHANGE-ถ้าสายต่างจากต้นแบบ] ชื่อชีทสายงาน ต้องตรงกับชื่อชีท และตรงกับทุกจุดที่มีรายการนี้
+  var invSheets = CONFIG.INVENTORY_SHEETS;
   for (var s = 0; s < invSheets.length; s++) {
     var invSheet = ss.getSheetByName(invSheets[s]);
     if (!invSheet) continue;
@@ -804,8 +871,8 @@ function getHistoryByRange(dateFromStr, dateToStr) {
 }
 
 function rebuildAllQRCodes() {
-  var scriptUrl = "https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec";  // [CHANGE] วาง Web app URL (ลงท้าย /exec) ที่ได้จากการ Deploy ของคุณแทน YOUR_DEPLOYMENT_ID
-  var sheetNames = ["สายพลา", "สายสื่อสาร", "สายช่างโยธา","สายขนส่ง"];  // [CHANGE-ถ้าสายต่างจากต้นแบบ] ชื่อชีทสายงาน ต้องตรงกับชื่อชีท และตรงกับทุกจุดที่มีรายการนี้
+  var scriptUrl = CONFIG.WEB_APP_URL;
+  var sheetNames = CONFIG.INVENTORY_SHEETS;
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   for (var s = 0; s < sheetNames.length; s++) {
     var sheet = ss.getSheetByName(sheetNames[s]);
@@ -826,7 +893,7 @@ function rebuildAllQRCodes() {
 
 function debugFindId() {
   var searchId = "7045-35-851-2079";  // [CHANGE-ตามต้องการ] หมายเลขพัสดุตัวอย่างสำหรับดีบั๊ก
-  var sheetNames = ["สายพลา", "สายสื่อสาร", "สายช่างโยธา","สายขนส่ง"];  // [CHANGE-ถ้าสายต่างจากต้นแบบ] ชื่อชีทสายงาน ต้องตรงกับชื่อชีท และตรงกับทุกจุดที่มีรายการนี้
+  var sheetNames = CONFIG.INVENTORY_SHEETS;
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var log = [];
   for (var s = 0; s < sheetNames.length; s++) {
@@ -843,7 +910,7 @@ function debugFindId() {
 }
 
 function fixColumnBFormat() {
-  var sheetNames = ["สายพลา", "สายสื่อสาร", "สายช่างโยธา","สายขนส่ง"];  // [CHANGE-ถ้าสายต่างจากต้นแบบ] ชื่อชีทสายงาน ต้องตรงกับชื่อชีท และตรงกับทุกจุดที่มีรายการนี้
+  var sheetNames = CONFIG.INVENTORY_SHEETS;
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var totalFixed = 0;
   for (var s = 0; s < sheetNames.length; s++) {
@@ -897,7 +964,7 @@ function fixColumnBFormat() {
 
 function getAnnexItems() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheetNames = ["สายพลา", "สายสื่อสาร", "สายช่างโยธา", "สายขนส่ง"];  // [CHANGE-ถ้าสายต่างจากต้นแบบ] ชื่อชีทสายงาน ต้องตรงกับชื่อชีท และตรงกับทุกจุดที่มีรายการนี้
+  var sheetNames = CONFIG.INVENTORY_SHEETS;
   var results = [];
   for (var s = 0; s < sheetNames.length; s++) {
     var sheet = ss.getSheetByName(sheetNames[s]);
