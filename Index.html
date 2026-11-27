@@ -613,9 +613,11 @@
         document.getElementById('content').innerHTML = `
           <div class="item-info">
             <div class="label">หมายเลขพัสดุ (ID)</div>
-            <div class="item-id">${data.id}</div>
+            <div id="idDisplay" class="item-id" ondblclick="enableFieldEdit(this,'id')"
+              title="ดับเบิลคลิกเพื่อแก้ไข" style="cursor:pointer;">${data.id}</div>
             <div class="label">ชื่อพัสดุ</div>
-            <div class="item-name">${data.name}</div>
+            <div id="nameDisplay" class="item-name" ondblclick="enableFieldEdit(this,'name')"
+              title="ดับเบิลคลิกเพื่อแก้ไข" style="cursor:pointer;">${data.name}</div>
             <div class="loc-container">
               <div class="loc-box">
                 <div class="label">สายงาน/คลัง</div>
@@ -840,7 +842,8 @@
           selectedUnit,
           currentItem.location,
           mfgDateToSave,
-          regNumToSave    
+          regNumToSave,
+          currentItem.id
         );
       }
 
@@ -981,6 +984,39 @@
         var msg = document.getElementById('msg');
         msg.style.color = "#f9ab00";
         msg.innerHTML   = "⚠️ แก้ไขที่เก็บแล้ว อย่าลืมกดบันทึกข้อมูล";
+      }
+
+      // แก้ไขหมายเลขพัสดุ (id) / ชื่อพัสดุ (name) ด้วยการดับเบิลคลิก เหมือนช่องที่เก็บพัสดุ
+      function enableFieldEdit(element, field) {
+        if (element.querySelector('input')) return;
+        var currentVal = (field === 'id' ? currentItem.id : currentItem.name) || '';
+        var input = document.createElement('input');
+        input.type  = 'text';
+        input.value = currentVal;
+        input.style.cssText = 'width:100%;box-sizing:border-box;font-family:Kanit;font-size:' +
+          (field === 'id' ? '22px' : '18px') +
+          ';border:1px solid var(--primary);border-radius:5px;padding:2px 6px;';
+        input.onblur    = function() { saveFieldEdit(element, field, this.value); };
+        input.onkeydown = function(e) { if (e.key === 'Enter') this.blur(); };
+        element.innerHTML = '';
+        element.appendChild(input);
+        input.focus();
+        input.select();
+      }
+
+      function saveFieldEdit(element, field, rawVal) {
+        var newVal = (rawVal || '').toString().trim();
+        var oldVal = (field === 'id' ? currentItem.id : currentItem.name);
+        var msg = document.getElementById('msg');
+        if (newVal === '') {                 // ห้ามเว้นว่าง: กลับไปใช้ค่าเดิม
+          newVal = oldVal;
+        }
+        element.innerText = newVal;
+        if (field === 'id') currentItem.id = newVal; else currentItem.name = newVal;
+        if (newVal !== oldVal) {
+          msg.style.color = "#f9ab00";
+          msg.innerHTML   = "⚠️ แก้ไข" + (field === 'id' ? 'หมายเลขพัสดุ' : 'ชื่อพัสดุ') + "แล้ว อย่าลืมกดบันทึกข้อมูล";
+        }
       }
 
       function showDefaultMenu() {

@@ -236,11 +236,53 @@ function searchParcelByName(query) {
   return results;
 }
 
-function updateQty(sheetName, row, newQty, itemName, unitName, newLocation, newManufDate, newRegNum) { 
+function updateQty(sheetName, row, newQty, itemName, unitName, newLocation, newManufDate, newRegNum, newId) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName(sheetName);
   if (!sheet) return "Error: ไม่พบชีท " + sheetName;
   var C = sheetCols_(sheet);
+
+  // ---- แก้ไขหมายเลขพัสดุ / ชื่อพัสดุ (ตรวจก่อนเขียนข้อมูลใด ๆ) ----
+  var oldIdCell   = sheet.getRange(row, C.id + 1).getValue();
+  var oldIdStr    = oldIdCell ? oldIdCell.toString().trim().replace(/^'+|'+$/g, "") : "";
+  var oldNameStr  = sheet.getRange(row, C.name + 1).getValue();
+  oldNameStr      = oldNameStr ? oldNameStr.toString().trim() : "";
+  var newIdStr    = (newId !== undefined && newId !== null) ? newId.toString().trim().replace(/^'+|'+$/g, "") : oldIdStr;
+  var newNameStr  = (itemName !== undefined && itemName !== null && itemName.toString().trim() !== "") ? itemName.toString().trim() : oldNameStr;
+  if (newIdStr === "") newIdStr = oldIdStr;
+  var idChanged   = (newIdStr !== oldIdStr);
+  var nameChanged = (newNameStr !== oldNameStr);
+  if (idChanged) {
+    var cleanNewId = newIdStr.replace(/[\s\-]/g, "").toLowerCase();
+    var allRows = sheet.getDataRange().getValues();
+    for (var di = 1; di < allRows.length; di++) {
+      if (di + 1 === row) continue;
+      var other = allRows[di][C.id];
+      if (other === undefined || other === null || other === "") continue;
+      if (other.toString().replace(/[\s\-']/g, "").toLowerCase() === cleanNewId) {
+        return "Error: หมายเลขพัสดุ " + newIdStr + " มีอยู่แล้วในระบบ (ตรงกับ " + other + ")";
+      }
+    }
+    sheet.getRange(row, C.id + 1).setNumberFormat("@");
+    sheet.getRange(row, C.id + 1).setValue(newIdStr);   // สูตร QR อ้างอิงช่องนี้ จึงอัปเดตตามอัตโนมัติ
+  }
+  if (nameChanged) {
+    sheet.getRange(row, C.name + 1).setValue(newNameStr);
+    // เปลี่ยนชื่อในชีทประวัติ/สรุปรายวัน เพื่อให้ยอดและรายงานยังเชื่อมกับพัสดุรายการเดิม
+    [CONFIG.HISTORY_SHEET, CONFIG.SUMMARY_SHEET].forEach(function(shName) {
+      var hs = ss.getSheetByName(shName);
+      if (!hs || hs.getLastRow() < 2) return;
+      var col = (shName === CONFIG.HISTORY_SHEET) ? 5 : 2;   // ประวัติ: คอลัมน์ E, สรุปรายวัน: คอลัมน์ B
+      var rng = hs.getRange(2, col, hs.getLastRow() - 1, 1);
+      var vals = rng.getValues(), hit = false;
+      for (var hi = 0; hi < vals.length; hi++) {
+        if (vals[hi][0] && vals[hi][0].toString().trim() === oldNameStr) { vals[hi][0] = newNameStr; hit = true; }
+      }
+      if (hit) rng.setValues(vals);
+    });
+  }
+  itemName = newNameStr;
+
   var oldQty = sheet.getRange(row, C.qty + 1).getValue();
   oldQty = parseFloat(oldQty) || 0;
   newQty = parseFloat(newQty) || 0;
@@ -267,7 +309,7 @@ function updateQty(sheetName, row, newQty, itemName, unitName, newLocation, newM
       regNumChanged = true;
     }
   }
-  if (diff === 0 && !newLocation && !newManufDate && !regNumChanged) return oldQty;
+  if (diff === 0 && !newLocation && !newManufDate && !regNumChanged && !idChanged && !nameChanged) return oldQty;
   var histSheet = ss.getSheetByName(CONFIG.HISTORY_SHEET);
   if (histSheet) {
     var histData = histSheet.getDataRange().getValues();
